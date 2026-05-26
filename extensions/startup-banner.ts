@@ -6,6 +6,7 @@ import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { readBannerConfig, type BannerColorPreset } from "../lib/banner-config.ts";
 
 const execAsync = promisify(exec);
 
@@ -46,6 +47,26 @@ const ROSE_LARGE_RAW = [
 function rgb(r: number, g: number, b: number, text: string): string {
   return `\x1b[38;2;${r};${g};${b}m${text}\x1b[39m`;
 }
+
+type Rgb = readonly [number, number, number];
+type BannerPalette = {
+  roseBase: Rgb;
+  glint: Rgb;
+  logoTip: Rgb;
+  logoFreshDark: Rgb;
+  logoFreshLight: Rgb;
+  logoInkDark: Rgb;
+  logoInkLight: Rgb;
+  label: Rgb;
+  value: Rgb;
+};
+
+const BANNER_PALETTES: Record<BannerColorPreset, BannerPalette> = {
+  pink: { roseBase: [255, 118, 195], glint: [255, 245, 252], logoTip: [255, 205, 238], logoFreshDark: [110, 36, 70], logoFreshLight: [255, 138, 206], logoInkDark: [95, 30, 60], logoInkLight: [255, 120, 198], label: [200, 100, 160], value: [255, 140, 210] },
+  cyan: { roseBase: [94, 234, 212], glint: [236, 254, 255], logoTip: [207, 250, 254], logoFreshDark: [21, 94, 117], logoFreshLight: [103, 232, 249], logoInkDark: [22, 78, 99], logoInkLight: [34, 211, 238], label: [45, 212, 191], value: [125, 211, 252] },
+  yellow: { roseBase: [250, 204, 21], glint: [254, 249, 195], logoTip: [254, 240, 138], logoFreshDark: [113, 63, 18], logoFreshLight: [251, 191, 36], logoInkDark: [92, 55, 12], logoInkLight: [245, 158, 11], label: [234, 179, 8], value: [253, 224, 71] },
+  green: { roseBase: [74, 222, 128], glint: [220, 252, 231], logoTip: [187, 247, 208], logoFreshDark: [20, 83, 45], logoFreshLight: [134, 239, 172], logoInkDark: [22, 101, 52], logoInkLight: [34, 197, 94], label: [74, 222, 128], value: [134, 239, 172] },
+};
 
 function normalizeAscii(lines: string[]): string[] {
   const trimmed = lines.map((l) => l.replace(/\s+$/g, ""));
@@ -433,15 +454,29 @@ function currentIntroMode(): IntroMode {
   return pickIntroMode(rows, cols);
 }
 
+const NON_INTERACTIVE_PI_COMMANDS = new Set([
+  "add",
+  "install",
+  "remove",
+  "update",
+  "upgrade",
+]);
+
+export function shouldSuppressStartupBanner(argv = process.argv.slice(2)): boolean {
+  for (const arg of argv) {
+    if (arg.startsWith("-")) continue;
+    return NON_INTERACTIVE_PI_COMMANDS.has(arg);
+  }
+  return false;
+}
+
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
 
-    // Si se está ejecutando un comando de CLI como "pi update" o "pi install", no mostramos la intro animada.
-    const isCLICommand =
-      process.argv.length > 2 &&
-      !process.argv.every((arg) => arg.startsWith("-") || arg.endsWith(".ts"));
-    if (isCLICommand) return;
+    // Si se está ejecutando un comando no interactivo como "pi update" o "pi install",
+    // no mostramos la intro animada. Opciones como "-e <path>" siguen siendo sesión interactiva.
+    if (shouldSuppressStartupBanner()) return;
 
     if (currentIntroMode() === "skip") return;
 
@@ -453,6 +488,8 @@ export default function (pi: ExtensionAPI) {
 
     const roseBase = padLines(normalizeAscii(ROSE_LARGE_RAW));
     const logoBase = padLines(TEXT_LOGO);
+    const bannerConfig = readBannerConfig();
+    const palette = BANNER_PALETTES[bannerConfig.colorPreset];
 
     let gitBranch = "Not a git repo";
     let mcpServersCount = 0;
@@ -834,9 +871,9 @@ export default function (pi: ExtensionAPI) {
                   const k = Math.max(0.01, roseOpacity * pulse);
                   const f = flashPhase ** 0.4;
 
-                  const rBase = Math.floor(255 * k);
-                  const gBase = Math.floor(118 * k);
-                  const bBase = Math.floor(195 * k);
+                  const rBase = Math.floor(palette.roseBase[0] * k);
+                  const gBase = Math.floor(palette.roseBase[1] * k);
+                  const bBase = Math.floor(palette.roseBase[2] * k);
 
                   if (f > 0.85) {
                     line += `\x1b[1m\x1b[38;2;255;255;255m${cell.char}\x1b[0m`;
@@ -866,30 +903,30 @@ export default function (pi: ExtensionAPI) {
                   }
 
                   if (glintOnCell) {
-                    line += `\x1b[1m` + rgb(255, 245, 252, cell.char) + `\x1b[22m`;
+                    line += `[1m` + rgb(...palette.glint, cell.char) + `[22m`;
                     continue;
                   }
 
                   if (cell.type === "logo-tip") {
-                    line += `\x1b[1m` + rgb(255, 205, 238, cell.char) + `\x1b[22m`;
+                    line += `[1m` + rgb(...palette.logoTip, cell.char) + `[22m`;
                   } else if (cell.type === "logo-fresh") {
                     line += cell.char === "▒"
-                      ? rgb(110, 36, 70, cell.char)
-                      : rgb(255, 138, 206, cell.char);
+                      ? rgb(...palette.logoFreshDark, cell.char)
+                      : rgb(...palette.logoFreshLight, cell.char);
                   } else {
                     line += cell.char === "▒"
-                      ? rgb(95, 30, 60, cell.char)
-                      : rgb(255, 120, 198, cell.char);
+                      ? rgb(...palette.logoInkDark, cell.char)
+                      : rgb(...palette.logoInkLight, cell.char);
                   }
                   continue;
                 }
 
                 switch (cell.type) {
                   case "label":
-                    line += rgb(200, 100, 160, cell.char);
+                    line += rgb(...palette.label, cell.char);
                     break;
                   case "value":
-                    line += rgb(255, 140, 210, cell.char);
+                    line += rgb(...palette.value, cell.char);
                     break;
                   case "dim":
                     line += theme.fg("dim", cell.char);
