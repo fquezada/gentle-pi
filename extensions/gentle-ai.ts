@@ -5,13 +5,7 @@ import {
 	readFileSync,
 	writeFileSync,
 } from "node:fs";
-import {
-	access,
-	mkdir,
-	readFile,
-	readdir,
-	writeFile,
-} from "node:fs/promises";
+import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,6 +23,14 @@ import {
 	renderSddPreflightPrompt,
 	type SddPreflightPreferences,
 } from "../lib/sdd-preflight.ts";
+import {
+	BANNER_COLOR_PRESETS,
+	bannerConfigPath,
+	readBannerConfigAsync,
+	updateBannerConfigAsync,
+	type BannerColorPreset,
+	type BannerConfig,
+} from "../lib/banner-config.ts";
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const ASSETS_DIR = join(PACKAGE_ROOT, "assets");
@@ -47,7 +49,11 @@ function sddGlobalAssetDriftCount(): number {
 		if (!existsSync(assetDir)) continue;
 		for (const entry of readdirSync(assetDir, { withFileTypes: true })) {
 			if (!entry.isFile()) continue;
-			const installedPath = join(gentlePiAgentHome(), installedSubdir, entry.name);
+			const installedPath = join(
+				gentlePiAgentHome(),
+				installedSubdir,
+				entry.name,
+			);
 			try {
 				if (!existsSync(installedPath)) {
 					stale += 1;
@@ -326,7 +332,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function gentleAiConfigHome(): string {
-	return process.env.GENTLE_PI_CONFIG_HOME ?? join(homedir(), ".pi", "gentle-ai");
+	return (
+		process.env.GENTLE_PI_CONFIG_HOME ?? join(homedir(), ".pi", "gentle-ai")
+	);
 }
 
 function modelConfigPath(_cwd: string): string {
@@ -372,7 +380,8 @@ function isThinkingLevel(value: unknown): value is ThinkingLevel {
 
 const ANSI_ESCAPE_PATTERN =
 	/[\u001b\u009b][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
-const CONTROL_CHAR_PATTERN = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g;
+const CONTROL_CHAR_PATTERN =
+	/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g;
 const SAFE_MODEL_ID_PATTERN = /^[A-Za-z0-9._~:@/+%-]+$/;
 
 function sanitizeTerminalText(value: string): string {
@@ -901,7 +910,9 @@ class SddModelPanel implements OverlayComponent {
 	private renderCard(lines: string[], width: number): string[] {
 		const innerWidth = Math.max(1, width - 4);
 		const fit = (text = "") =>
-			truncateToWidth(sanitizeTerminalText(text), innerWidth, "…", true).padEnd(innerWidth);
+			truncateToWidth(sanitizeTerminalText(text), innerWidth, "…", true).padEnd(
+				innerWidth,
+			);
 		return [
 			`╭${"─".repeat(innerWidth + 2)}╮`,
 			...lines.map((line) => `│ ${fit(line)} │`),
@@ -1132,7 +1143,9 @@ class SddModelPanel implements OverlayComponent {
 		const options = this.filteredModelOptions();
 		const line = (text = "") =>
 			truncateToWidth(text, Math.max(1, width), "…", true);
-		lines.push(line(`Select model for ${sanitizeTerminalText(this.selectedRow)}`));
+		lines.push(
+			line(`Select model for ${sanitizeTerminalText(this.selectedRow)}`),
+		);
 		lines.push("");
 		lines.push(line(`◎ ${this.query || "search..."}`));
 		lines.push("");
@@ -1146,7 +1159,11 @@ class SddModelPanel implements OverlayComponent {
 		const end = Math.min(options.length, start + MODEL_LIST_MAX_VISIBLE_ROWS);
 		for (let i = start; i < end; i++) {
 			const focused = i === this.modelCursor;
-			lines.push(line(`${focused ? "▸" : " "} ${sanitizeTerminalText(options[i] ?? "")}`));
+			lines.push(
+				line(
+					`${focused ? "▸" : " "} ${sanitizeTerminalText(options[i] ?? "")}`,
+				),
+			);
 		}
 		if (options.length === 0) lines.push(line("  No matching models"));
 		lines.push("");
@@ -1187,7 +1204,9 @@ class SddModelPanel implements OverlayComponent {
 		const lines: string[] = [];
 		const line = (text = "") =>
 			truncateToWidth(text, Math.max(1, width), "…", true);
-		lines.push(line(`Select effort for ${sanitizeTerminalText(this.selectedRow)}`));
+		lines.push(
+			line(`Select effort for ${sanitizeTerminalText(this.selectedRow)}`),
+		);
 		lines.push("");
 		for (let i = 0; i < THINKING_OPTIONS.length; i++) {
 			const focused = i === this.effortCursor;
@@ -1312,6 +1331,39 @@ async function handleModelsCommand(ctx: ExtensionContext): Promise<void> {
 	);
 }
 
+function describeBannerConfig(config: BannerConfig): string {
+	return `color=${config.colorPreset}`;
+}
+
+function notifyBannerConfig(
+	ctx: ExtensionContext,
+	action: string,
+	config: BannerConfig,
+): void {
+	ctx.ui.notify(
+		[
+			`el Gentleman banner ${action}.`,
+			`Global config: ${bannerConfigPath()}`,
+			`Current: ${describeBannerConfig(config)}`,
+			"Changes apply to future startup renders/sessions.",
+		].join("\n"),
+		"info",
+	);
+}
+
+async function handleBannerColorCommand(ctx: ExtensionContext): Promise<void> {
+	const current = await readBannerConfigAsync();
+	const selected = await ctx.ui.select(
+		`Banner color preset (current: ${current.colorPreset})`,
+		[...BANNER_COLOR_PRESETS],
+	);
+	if (!BANNER_COLOR_PRESETS.includes(selected as BannerColorPreset)) return;
+	const next = await updateBannerConfigAsync({
+		colorPreset: selected as BannerColorPreset,
+	});
+	notifyBannerConfig(ctx, `color set to ${next.colorPreset}`, next);
+}
+
 async function handlePersonaCommand(ctx: ExtensionContext): Promise<void> {
 	const current = readPersonaMode(ctx.cwd);
 	const selected = await ctx.ui.select(
@@ -1331,7 +1383,9 @@ async function handlePersonaCommand(ctx: ExtensionContext): Promise<void> {
 }
 
 export default function gentleAi(pi: ExtensionAPI): void {
-	function runSddPreflight(ctx: ExtensionContext): Promise<SddPreflightPreferences> {
+	function runSddPreflight(
+		ctx: ExtensionContext,
+	): Promise<SddPreflightPreferences> {
 		return ensureSddPreflight(ctx, {
 			pi,
 			installAssets: (cwd) => installSddAssets(cwd, false),
@@ -1358,8 +1412,7 @@ export default function gentleAi(pi: ExtensionAPI): void {
 			}
 		} catch (error) {
 			if (ctx.hasUI) {
-				const message =
-					error instanceof Error ? error.message : String(error);
+				const message = error instanceof Error ? error.message : String(error);
 				ctx.ui.notify(
 					`el Gentleman model config sweep failed: ${message}`,
 					"warning",
@@ -1387,9 +1440,10 @@ export default function gentleAi(pi: ExtensionAPI): void {
 			prefs && (!isNamedAgent || isSddAgent)
 				? `\n\n${renderSddPreflightPrompt(prefs)}`
 				: "";
-		const gentlePrompt = isNamedAgent || isSddAgent
-			? ""
-			: `\n\n${buildGentlePrompt(readPersonaMode(ctx.cwd))}`;
+		const gentlePrompt =
+			isNamedAgent || isSddAgent
+				? ""
+				: `\n\n${buildGentlePrompt(readPersonaMode(ctx.cwd))}`;
 		return {
 			systemPrompt: `${event.systemPrompt}${gentlePrompt}${sddPrompt}`,
 		};
@@ -1416,8 +1470,7 @@ export default function gentleAi(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("gentle-ai:sdd-preflight", {
-		description:
-			"Run or reuse the lazy SDD preflight for this Pi session.",
+		description: "Run or reuse the lazy SDD preflight for this Pi session.",
 		handler: async (_args, ctx) => {
 			await runSddPreflight(ctx);
 		},
@@ -1450,6 +1503,24 @@ export default function gentleAi(pi: ExtensionAPI): void {
 			await handleModelsCommand(ctx);
 		},
 	});
+
+	for (const [name, description, handler] of [
+		[
+			"gentle:banner-color",
+			"Select startup banner color preset.",
+			handleBannerColorCommand,
+		],
+		[
+			"gentle-ai:banner-color",
+			"Compatibility alias for /gentle:banner-color.",
+			handleBannerColorCommand,
+		],
+	] as const) {
+		pi.registerCommand(name, {
+			description,
+			handler: async (_args, ctx) => handler(ctx),
+		});
+	}
 
 	pi.registerCommand("gentle:persona", {
 		description: "Switch el Gentleman persona between gentleman and neutral.",
