@@ -369,12 +369,44 @@ Config shape (per agent):
 
 Legacy string entries are still accepted and treated as `model`-only config.
 
+## Startup banner customization
+
+```text
+/gentle:banner-color
+```
+
+The startup banner color is configurable globally. Defaults preserve the current experience: existing rose/text-logo rendering behavior and the `pink` color preset.
+
+Available color presets:
+
+- `pink`
+- `cyan`
+- `yellow`
+- `green`
+
+Saved globally at:
+
+```text
+~/.pi/gentle-ai/banner.json
+```
+
+Set `GENTLE_PI_CONFIG_HOME` to use a different global Gentle AI config directory; banner config is then saved as `$GENTLE_PI_CONFIG_HOME/banner.json`.
+
+Changes apply to future startup renders/sessions. This change intentionally supports presets only: no custom RGB colors, no custom banner art, and no rose/text-logo visibility toggles.
+
+Compatibility alias:
+
+```text
+/gentle-ai:banner-color
+```
+
 ## Commands
 
 | Command                          | What it does                                                        |
 | -------------------------------- | ------------------------------------------------------------------- |
 | `/gentle-ai:status`              | Shows package, SDD asset, OpenSpec, and global model config status. |
 | `/gentle:models`                 | Opens global model + effort assignment UI.                          |
+| `/gentle:banner-color`           | Selects a startup banner color preset.                              |
 | `/gentle:persona`                | Switches persona mode.                                              |
 | `/sdd-init`                      | Initializes or refreshes `openspec/config.yaml`.                    |
 | `/gentle-ai:install-sdd`         | Repairs missing global SDD runtime assets without overwriting files. |
@@ -394,6 +426,7 @@ Compatibility aliases:
 ```text
 /gentle-ai:models
 /gentleman:models
+/gentle-ai:banner-color
 /gentle-ai:persona
 /gentleman:persona
 ```

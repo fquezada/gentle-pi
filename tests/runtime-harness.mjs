@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { shouldSuppressStartupBanner } from "../extensions/startup-banner.ts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const EXTENSIONS = [
@@ -174,6 +175,9 @@ async function run() {
 		[],
 		"declared extension directory must load without invalid helper modules",
 	);
+	assert.equal(shouldSuppressStartupBanner(["-e", ROOT]), false);
+	assert.equal(shouldSuppressStartupBanner(["install", "npm:gentle-pi"]), true);
+	assert.equal(shouldSuppressStartupBanner(["remove", "npm:gentle-pi"]), true);
 
 	const promptCwd = await tempWorkspace();
 	try {
