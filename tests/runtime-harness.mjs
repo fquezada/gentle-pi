@@ -23,6 +23,8 @@ const EXPECTED_COMMANDS = [
 	"gentle:models",
 	"gentle-ai:models",
 	"gentleman:models",
+	"gentle:banner-color",
+	"gentle-ai:banner-color",
 	"gentle:persona",
 	"gentle-ai:persona",
 	"gentleman:persona",
@@ -143,6 +145,7 @@ async function run() {
 	process.env.GENTLE_PI_CONFIG_HOME = globalConfigHome;
 	process.env.GENTLE_PI_AGENT_HOME = globalAgentHome;
 	const globalModelsPath = join(globalConfigHome, "models.json");
+	const globalBannerPath = join(globalConfigHome, "banner.json");
 	const { pi, hooks, commands, flags } = createPi();
 	await loadExtensions(pi);
 
@@ -496,6 +499,32 @@ async function run() {
 		assert.equal(existsSync(join(globalAgentHome, "agents", "sdd-apply.md")), true);
 	} finally {
 		await rm(installCwd, { recursive: true, force: true });
+	}
+
+	const bannerCwd = await tempWorkspace();
+	try {
+		await rm(globalBannerPath, { force: true });
+		const ctx = createCtx(bannerCwd, true);
+		ctx.ui.select = async (label, options) => {
+			ctx.ui.selections.push({ label, options });
+			return "cyan";
+		};
+		await commands.get("gentle:banner-color").handler("", ctx);
+		assert.deepEqual(JSON.parse(await readFile(globalBannerPath, "utf8")), {
+			colorPreset: "cyan",
+		});
+
+		ctx.ui.select = async (label, options) => {
+			ctx.ui.selections.push({ label, options });
+			return "green";
+		};
+		await commands.get("gentle-ai:banner-color").handler("", ctx);
+		assert.deepEqual(JSON.parse(await readFile(globalBannerPath, "utf8")), {
+			colorPreset: "green",
+		});
+	} finally {
+		await rm(bannerCwd, { recursive: true, force: true });
+		await rm(globalBannerPath, { force: true });
 	}
 
 	const staleAssetsCwd = await tempWorkspace();
